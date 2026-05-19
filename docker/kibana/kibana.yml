@@ -1,0 +1,8 @@
+server.host: "0.0.0.0"
+server.port: 5601
+server.basePath: "/kibana"
+server.rewriteBasePath: true
+elasticsearch.hosts: ["http://elasticsearch:9200"]
+monitoring.ui.container.elasticsearch.enabled: false
+telemetry.enabled: false
+newsfeed.enabled: false

@@ -1,0 +1,17 @@
+.env
+.env.*
+.claude.json
+.claude/
+.bash_history
+.docker/
+.npm/
+PROGRESS.md
+es-survey.md
+.ssh/
+.bash_logout
+.bash_profile
+.bashrc
+.zshrc
+.cache/
+.config/
+.local/
