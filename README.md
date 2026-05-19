@@ -119,18 +119,74 @@ Elasticsearch 초기 기동은 수 초~수십 초 소요될 수 있다. Kibana�
 .
 ├── docker-compose.infra.yml
 ├── .env
-└── docker/
-    ├── mariadb/
-    │   └── my.cnf              # MariaDB 커스텀 설정
-    ├── logstash/
-    │   ├── config/
-    │   │   └── logstash.yml    # Logstash 기본 설정
-    │   └── pipeline/
-    │       └── main.conf       # 로그 파이프라인 정의
-    ├── kibana/
-    │   └── kibana.yml          # Kibana 연결 설정
-    └── filebeat/
-        └── filebeat.yml        # 수집 경로 및 output 설정
+├── sync-search.sh              # zslab-search → 각 프로젝트 동기화 스크립트
+├── docker/
+│   ├── mariadb/
+│   │   └── my.cnf              # MariaDB 커스텀 설정
+│   ├── logstash/
+│   │   ├── config/
+│   │   │   └── logstash.yml    # Logstash 기본 설정
+│   │   └── pipeline/
+│   │       └── main.conf       # 로그 파이프라인 정의
+│   ├── kibana/
+│   │   └── kibana.yml          # Kibana 연결 설정
+│   └── filebeat/
+│       └── filebeat.yml        # 수집 경로 및 output 설정
+├── zslab-realtime/             # 실시간 인프라 상태 알림 서비스 (Node.js)
+│   ├── Dockerfile
+│   ├── package.json
+│   ├── server.js
+│   └── handlers/
+│       └── portfolio/
+│           └── infra.js        # 인프라 상태 수집 핸들러
+└── zslab-search/               # 공용 Elasticsearch 검색 패키지 (Laravel)
+    ├── composer.json
+    ├── config/
+    │   └── zslab-search.php    # 설정 기본값 (host, index prefix 등)
+    └── src/
+        ├── ZslabSearchServiceProvider.php
+        ├── Client/
+        │   └── ElasticsearchClient.php   # ES 클라이언트 래퍼
+        ├── Contracts/
+        │   └── Searchable.php            # 검색 가능 모델 인터페이스
+        ├── Index/
+        │   ├── AnalyzerPresets.php       # nori / jamo 분석기 설정
+        │   └── IndexManager.php          # 인덱스 생성·삭제·재색인
+        ├── Observer/
+        │   └── SearchableObserver.php    # 모델 이벤트 → ES 동기화
+        ├── Search/
+        │   ├── SearchBuilder.php         # 검색 쿼리 빌더
+        │   ├── SuggestBuilder.php        # 자동완성 쿼리 빌더
+        │   └── PaginatedResult.php       # 페이지네이션 결과 래퍼
+        └── Utils/
+            └── JamoConverter.php         # 한글 자모 분해 유틸
+```
+
+---
+
+## zslab-search
+
+복수 Laravel 프로젝트(zslab-shop, zslab-lms)에서 공유하는 Elasticsearch 검색 패키지.
+
+| 항목 | 값 |
+|---|---|
+| Composer name | `zslab/search` |
+| PHP | `>=8.1` |
+| 의존 라이브러리 | `elasticsearch/elasticsearch ^8.0` |
+| ServiceProvider | `Zslab\Search\ZslabSearchServiceProvider` |
+
+**주요 기능:**
+- nori 형태소 분석기 기반 한국어 검색 (`SearchBuilder`)
+- 한글 자모 분해 검색 (`JamoConverter` + `jamo_analyzer`)
+- 자동완성 (`SuggestBuilder`, bool_prefix + 자모 매칭)
+- 모델 이벤트 자동 색인 (`SearchableObserver`)
+
+**패키지 동기화:**
+
+`sync-search.sh`로 `zslab-search/src/`를 각 프로젝트의 패키지 경로에 복사한다.
+
+```bash
+bash sync-search.sh
 ```
 
 ---
