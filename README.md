@@ -28,7 +28,7 @@ Filebeat가 수집하는 로그 경로:
 | 네트워크 | 용도 | 연결 서비스 |
 |---|---|---|
 | `infra_net` | 사이트 ↔ 공유 인프라 표준 네트워크 (인프라 서비스 간 통신 포함) | 전체 서비스 |
-| `gateway_net` | gateway ↔ 사이트 (gateway에서 Kibana·realtime 접근) | Kibana, zslab-realtime |
+| `gateway_net` | gateway ↔ 사이트 (gateway에서 realtime 접근) | zslab-realtime |
 | `portfolio_portfolio_net` | realtime이 portfolio에 접근할 때 사용 | zslab-realtime |
 
 네트워크 생성 (최초 1회):
@@ -106,11 +106,25 @@ docker compose -f docker-compose.infra.yml down
 
 ## 운영 반영 방식
 
-CI/CD는 없다. 서버에서 `git pull` 후, 바꾼 서비스만 이름을 지정해 재생성한다.
+CI/CD는 없다. 서버는 https origin(읽기 전용)이며, 수정은 PC → PR → 머지로만 한다.
+
+1. 서버에서 `zslab-infra` 유저로 INFRA_DIR에서 `git pull`
+2. 인프라 변경: 바뀐 서비스만 이름을 지정해 재생성한다. `my.cnf`·`logstash.yml`·`kibana.yml`·`filebeat.yml` 같은 단일 파일 마운트를 바꾼 경우도 해당 서비스를 재생성하면 반영된다.
+   ```bash
+   docker compose -f docker-compose.infra.yml up -d --no-deps <서비스명>
+   ```
+3. gateway 변경: `scripts/deploy-gateway.sh`로 반영한다. conf는 같은 inode에 덮어쓰기 → `nginx -t` → reload, 실패 시 자동 원복한다.
+   ```bash
+   sudo GATEWAY_DIR=<경로> bash scripts/deploy-gateway.sh
+   ```
+
+### Kibana 접속
+
+공개 경로는 없다(gateway에 `/kibana` 없음). 필요할 때만 Kibana를 기동하고 SSH 터널로 접속한다.
 
 ```bash
-git pull
-docker compose -f docker-compose.infra.yml up -d --build <서비스명>
+ssh -L 5601:127.0.0.1:5601 <서버>
+# 접속: http://localhost:5601/kibana  (kibana.yml server.basePath: "/kibana")
 ```
 
 ---

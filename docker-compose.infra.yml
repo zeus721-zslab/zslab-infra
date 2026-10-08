@@ -1,5 +1,7 @@
 version: "3.9"
 
+name: zslab-infra
+
 networks:
   infra_net:
     external: true
@@ -85,12 +87,13 @@ services:
     image: kibana:8.13.0
     container_name: zslab_kibana
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:5601:5601"
     volumes:
       - ./docker/kibana/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
       - kibana_data:/usr/share/kibana/data
     networks:
       infra_net: {}
-      gateway_net: {}
     depends_on:
       - elasticsearch
 
