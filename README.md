@@ -10,7 +10,7 @@
 |---|---|---|---|
 | MariaDB | `mariadb:10.11` | `zslab_mariadb` | 공용 관계형 DB |
 | Redis | `redis:7-alpine` | `zslab_redis` | 캐시 / 세션 |
-| Elasticsearch | `elasticsearch:8.13.0` | `zslab_elasticsearch` | 로그 저장 및 검색 |
+| Elasticsearch | `zslab-elasticsearch:8.13.0-nori` (빌드) | `zslab_elasticsearch` | 로그 저장 및 검색 |
 | Logstash | `logstash:8.13.0` | `zslab_logstash` | 로그 수집 및 파이프라인 |
 | Kibana | `kibana:8.13.0` | `zslab_kibana` | 로그 시각화 |
 | Filebeat | `filebeat:8.13.0` | `zslab_filebeat` | 로그 파일 수집 에이전트 |
@@ -27,16 +27,16 @@ Filebeat가 수집하는 로그 경로:
 
 | 네트워크 | 용도 | 연결 서비스 |
 |---|---|---|
-| `infra_net` | 인프라 서비스 간 내부 통신 | 전체 서비스 |
-| `zslab_zslab_net` | 프로젝트 컨테이너와 DB/Redis 공유 | MariaDB, Redis, Elasticsearch |
-| `gateway_net` | 외부 게이트웨이에서 Kibana 접근 | Kibana |
+| `infra_net` | 사이트 ↔ 공유 인프라 표준 네트워크 (인프라 서비스 간 통신 포함) | 전체 서비스 |
+| `gateway_net` | gateway ↔ 사이트 (gateway에서 Kibana·realtime 접근) | Kibana, zslab-realtime |
+| `portfolio_portfolio_net` | realtime이 portfolio에 접근할 때 사용 | zslab-realtime |
 
 네트워크 생성 (최초 1회):
 
 ```bash
 docker network create infra_net
-docker network create zslab_zslab_net
 docker network create gateway_net
+docker network create portfolio_portfolio_net
 ```
 
 ---
@@ -96,11 +96,55 @@ docker compose -f docker-compose.infra.yml down
 
 ---
 
+## Elasticsearch (nori)
+
+- 이미지는 `docker/elasticsearch/Dockerfile`로 빌드한다(`elasticsearch:8.13.0` + `analysis-nori` 플러그인 → `zslab-elasticsearch:8.13.0-nori`). 기동 시 `--build`를 붙이면 이미지가 없을 때 빌드된다.
+- 서버(Linux 호스트)는 `vm.max_map_count=262144`가 필요하다. `/etc/sysctl.d/99-elasticsearch.conf`에 설정되어 있다.
+- 플러그인 확인: `docker exec zslab_elasticsearch curl -s localhost:9200/_cat/plugins` → `analysis-nori` 포함
+
+---
+
+## 운영 반영 방식
+
+CI/CD는 없다. 서버에서 `git pull` 후, 바꾼 서비스만 이름을 지정해 재생성한다.
+
+```bash
+git pull
+docker compose -f docker-compose.infra.yml up -d --build <서비스명>
+```
+
+---
+
+## PC 로컬 사용법
+
+PC는 MariaDB·Elasticsearch·Redis만 띄운다. 서버 전용 서비스(zslab-realtime, kibana, logstash, filebeat)는 기동하지 않으므로 항상 서비스 이름을 지정한다.
+
+```bash
+# 최초 1회: 네트워크·볼륨
+docker network create infra_net
+docker volume create zslab_mariadb_data
+docker volume create zslab_redis_data
+docker volume create zslab_elasticsearch_data
+
+# 기동 (.env 필요: DB_ROOT_PASSWORD, DB_DATABASE, DB_USERNAME, DB_PASSWORD, REDIS_PASSWORD)
+# docker-compose.local.yml: PC에서 호스트 포트로 접속하기 위한 override (서버에는 없는 파일)
+docker compose -f docker-compose.infra.yml -f docker-compose.local.yml up -d --build mariadb elasticsearch redis
+
+# 확인
+docker exec zslab_mariadb sh -c 'mariadb-admin -uroot -p"$MYSQL_ROOT_PASSWORD" ping'
+docker exec zslab_elasticsearch curl -s 'localhost:9200/_cluster/health?filter_path=status'
+docker exec zslab_elasticsearch curl -s localhost:9200/_cat/plugins
+```
+
+서버 compose(`docker-compose.infra.yml`)에는 MariaDB 호스트 포트 공개가 없다. PC에서는 `docker-compose.local.yml`로 `127.0.0.1:3306`만 공개해 호스트 DB 클라이언트 접속을 허용한다. 컨테이너 간 통신은 `infra_net` 안에서 `zslab_mariadb` 이름으로 한다.
+
+---
+
 ## 재기동 순서 주의사항
 
 **인프라를 먼저 기동한 뒤 각 프로젝트를 기동해야 한다.**
 
-프로젝트 컨테이너들이 `zslab_zslab_net`을 통해 MariaDB·Redis·Elasticsearch에 접속하므로, 인프라가 준비되지 않은 상태에서 프로젝트를 먼저 올리면 DB 연결 오류가 발생한다.
+프로젝트 컨테이너들이 `infra_net`을 통해 MariaDB·Redis·Elasticsearch에 접속하므로, 인프라가 준비되지 않은 상태에서 프로젝트를 먼저 올리면 DB 연결 오류가 발생한다.
 
 ```
 1. zslab-infra 기동  →  docker compose -f docker-compose.infra.yml up -d
@@ -121,6 +165,8 @@ Elasticsearch 초기 기동은 수 초~수십 초 소요될 수 있다. Kibana�
 ├── .env
 ├── sync-search.sh              # zslab-search → 각 프로젝트 동기화 스크립트
 ├── docker/
+│   ├── elasticsearch/
+│   │   └── Dockerfile          # elasticsearch:8.13.0 + analysis-nori
 │   ├── mariadb/
 │   │   └── my.cnf              # MariaDB 커스텀 설정
 │   ├── logstash/
@@ -132,9 +178,15 @@ Elasticsearch 초기 기동은 수 초~수십 초 소요될 수 있다. Kibana�
 │   │   └── kibana.yml          # Kibana 연결 설정
 │   └── filebeat/
 │       └── filebeat.yml        # 수집 경로 및 output 설정
+├── gateway/                    # gateway_nginx 리버스 프록시 (서버 /home/gateway)
+│   ├── docker-compose.yml
+│   ├── README.md
+│   └── nginx/
+│       └── nginx.conf
 ├── zslab-realtime/             # 실시간 인프라 상태 알림 서비스 (Node.js)
 │   ├── Dockerfile
 │   ├── package.json
+│   ├── package-lock.json
 │   ├── server.js
 │   └── handlers/
 │       └── portfolio/
@@ -191,10 +243,20 @@ bash sync-search.sh
 
 ---
 
+## gateway/
+
+서버 `/home/gateway`의 리버스 프록시(`gateway_nginx`, 80/443 진입점) 설정.
+
+- 들어 있는 것: `docker-compose.yml`(nginx, `gateway_net` 생성), `nginx/nginx.conf`, `README.md`
+- 저장소 밖: 인증서(`certs/`), 로그(`logs/`), certbot webroot(`webroot/`), `.env`, `nginx.conf` 백업(`*.bak*`, `.gitignore` 대상)
+- nginx conf 편집 규칙: `sed -i` 금지(파일을 새로 만들어 inode가 바뀌면 bind mount된 컨테이너가 옛 파일을 계속 본다). 같은 inode에 덮어쓰기(예 `cat new.conf > nginx/nginx.conf`) → `docker exec gateway_nginx nginx -t` → `docker exec gateway_nginx nginx -s reload`
+
+---
+
 ## 연결된 프로젝트
 
 | 프로젝트 | 사용 서비스 | 접속 네트워크 |
 |---|---|---|
-| zslab-shop | MariaDB, Redis, Elasticsearch | `zslab_zslab_net` |
-| zslab-lms | MariaDB, Redis | `zslab_zslab_net` |
-| crawl-blog | Elasticsearch | `zslab_zslab_net` |
+| zslab-shop | MariaDB, Redis, Elasticsearch | `infra_net` |
+| zslab-lms | MariaDB, Redis | `infra_net` |
+| crawl-blog | Elasticsearch | `infra_net` |

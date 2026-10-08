@@ -7,9 +7,6 @@ networks:
   gateway_net:
     external: true
     name: gateway_net
-  zslab_net:
-    external: true
-    name: zslab_zslab_net
   portfolio_net:
     external: true
     name: portfolio_portfolio_net
@@ -43,7 +40,6 @@ services:
       - ./docker/mariadb/my.cnf:/etc/mysql/conf.d/custom.cnf:ro
     networks:
       infra_net: {}
-      zslab_net: {}
 
   redis:
     image: redis:7-alpine
@@ -54,10 +50,11 @@ services:
       - redis_data:/data
     networks:
       infra_net: {}
-      zslab_net: {}
 
   elasticsearch:
-    image: elasticsearch:8.13.0
+    build:
+      context: ./docker/elasticsearch
+    image: zslab-elasticsearch:8.13.0-nori
     container_name: zslab_elasticsearch
     restart: unless-stopped
     environment:
@@ -69,7 +66,6 @@ services:
       - elasticsearch_data:/usr/share/elasticsearch/data
     networks:
       infra_net: {}
-      zslab_net: {}
 
   logstash:
     image: logstash:8.13.0

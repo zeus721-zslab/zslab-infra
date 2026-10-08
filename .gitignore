@@ -15,3 +15,7 @@ es-survey.md
 .cache/
 .config/
 .local/
+
+# nginx conf 백업(서버에서 편집 전 복사본)
+*.bak
+*.bak[-.]*

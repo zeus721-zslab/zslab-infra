@@ -1,0 +1,27 @@
+version: "3.9"
+
+networks:
+  gateway_net:
+    name: gateway_net
+    driver: bridge
+
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: gateway_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+      - ./webroot:/var/www/certbot:ro
+      - ./logs/nginx:/var/log/nginx
+    networks:
+      - gateway_net
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
