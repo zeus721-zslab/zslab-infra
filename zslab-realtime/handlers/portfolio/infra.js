@@ -1,14 +1,26 @@
 const { execFile } = require('child_process');
+const crypto = require('crypto');
 
 const INTERNAL_KEY = process.env.INTERNAL_KEY || '';
 
+function timingSafeEqual(a, b) {
+  const aBuf = Buffer.from(String(a));
+  const bBuf = Buffer.from(String(b));
+  if (aBuf.length !== bBuf.length) {
+    crypto.timingSafeEqual(aBuf, aBuf); // dummy op to normalize timing
+    return false;
+  }
+  return crypto.timingSafeEqual(aBuf, bBuf);
+}
+
 const BLOCKED_FIELDS = ['ip', 'networks', 'env', 'environment', 'mounts'];
+const ALLOWED_FIELDS = ['Names', 'Image', 'State'];
 const SENSITIVE_NAME_PATTERN = /secret|password|key|token/i;
 
 function sanitizeContainer(raw) {
   const out = {};
   for (const [k, v] of Object.entries(raw)) {
-    if (BLOCKED_FIELDS.includes(k.toLowerCase())) continue;
+    if (!ALLOWED_FIELDS.includes(k)) continue;
     if (k === 'Names' || k === 'Image') {
       out[k] = SENSITIVE_NAME_PATTERN.test(String(v)) ? '***' : v;
     } else {
@@ -114,7 +126,7 @@ function register(app, io) {
   // Internal-only trigger endpoint
   app.post('/internal/portfolio/infra-trigger', (req, res) => {
     const clientKey = req.headers['x-internal-key'] || '';
-    if (!INTERNAL_KEY || clientKey !== INTERNAL_KEY) {
+    if (!INTERNAL_KEY || !timingSafeEqual(clientKey, INTERNAL_KEY)) {
       return res.status(403).json({ error: 'forbidden' });
     }
 

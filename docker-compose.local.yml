@@ -1,0 +1,5 @@
+# PC 로컬 전용 override. 서버에서는 쓰지 않는다.
+services:
+  mariadb:
+    ports:
+      - "127.0.0.1:3306:3306"
