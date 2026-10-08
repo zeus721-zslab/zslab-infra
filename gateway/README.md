@@ -60,24 +60,20 @@ docker exec gateway_nginx nginx -s reload
 
 ---
 
-## nginx 설정 변경 주의사항
+## nginx 설정 변경 절차
 
-**`sed -i` 금지** — 임시파일+rename 방식이라 inode가 바뀌면 bind mount된 컨테이너가 옛 파일을 계속 참조하게 됨.
-같은 inode에 덮어쓰기 후 문법 검사·reload.
+저장소(`zslab-infra`)의 `gateway/nginx/nginx.conf`를 고치고 PR → 머지한 뒤, 서버에서 배포 스크립트로 반영한다.
 
 ```bash
-# 올바른 방법 (같은 inode에 덮어쓰기)
-cat new.conf > /home/gateway/nginx/nginx.conf
-
-# 설정 문법 검사
-docker exec gateway_nginx nginx -t
-
-# reload (무중단)
-docker exec gateway_nginx nginx -s reload
-
-# restart (다운타임 발생, 불가피한 경우만)
-docker compose restart nginx
+sudo GATEWAY_DIR=/home/gateway bash scripts/deploy-gateway.sh
 ```
+
+스크립트가 하는 일:
+- 저장소 conf와 `GATEWAY_DIR/nginx/nginx.conf`가 같으면 건너뜀
+- 다르면 `nginx.conf.bak-<타임스탬프>`로 백업 후, **같은 inode에 덮어쓰기**(`sed -i`·`cp`·`git`은 inode가 바뀌어 bind mount된 컨테이너가 옛 파일을 계속 참조하게 됨)
+- `docker exec gateway_nginx nginx -t`로 문법 검사 — 실패하면 백업으로 자동 원복
+- 성공하면 `docker exec gateway_nginx nginx -s reload` (무중단)
+- `docker-compose.yml`이 바뀐 경우는 백업 후 교체만 하고, `docker compose up -d`는 수동으로 실행해야 한다는 안내만 출력
 
 ---
 
@@ -94,6 +90,11 @@ docker compose restart nginx
 ├── logs/
 │   └── nginx/              # nginx 액세스/에러 로그
 └── webroot/                # certbot webroot 인증용
+
+| 구분 | 경로 | 출처 |
+|---|---|---|
+| GATEWAY_DIR에만 존재 | `certs/`, `webroot/`, `logs/`, `.env`, `nginx/nginx.conf.bak-*` | 서버 로컬 데이터·백업 (git 미추적) |
+| 저장소에서 배포 | `docker-compose.yml`, `nginx/nginx.conf` | `zslab-infra` 저장소 `gateway/` → `scripts/deploy-gateway.sh` |
 
 ---
 
@@ -122,6 +123,5 @@ docker compose down
 
 1. DuckDNS에서 서브도메인 등록
 2. certbot으로 SSL 인증서 발급
-3. `nginx.conf`에 서버 블록 추가 (같은 inode에 덮어쓰기, `sed -i` 금지)
-4. `docker exec gateway_nginx nginx -t` 문법 검사
-5. `docker exec gateway_nginx nginx -s reload` 적용
+3. 저장소 `gateway/nginx/nginx.conf`에 서버 블록 추가 → PR → 머지
+4. 서버에서 `sudo GATEWAY_DIR=/home/gateway bash scripts/deploy-gateway.sh` 실행 (문법 검사·reload 포함)
